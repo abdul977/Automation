@@ -46,6 +46,35 @@ app = Flask(__name__)
 # Structure: {phone_number: [messages]}
 message_store = defaultdict(list)
 
+def normalize_phone_number(phone_number):
+    """
+    Normalize phone number to consistent format for Nigerian numbers
+
+    Examples:
+    - 09025794407 → 2349025794407
+    - +2349025794407 → 2349025794407
+    - 2349025794407 → 2349025794407
+    """
+    if not phone_number:
+        return phone_number
+
+    # Remove all non-digit characters
+    digits_only = ''.join(filter(str.isdigit, phone_number))
+
+    # Handle Nigerian numbers
+    if digits_only.startswith('234'):
+        # Already in international format without +
+        return digits_only
+    elif digits_only.startswith('0') and len(digits_only) == 11:
+        # Local Nigerian format (0XXXXXXXXXX) → international (234XXXXXXXXXX)
+        return '234' + digits_only[1:]
+    elif len(digits_only) == 10:
+        # Missing leading 0, assume Nigerian local format
+        return '234' + digits_only
+    else:
+        # Return as-is for other formats
+        return digits_only
+
 def store_message(phone_number, message_text, sender_type, message_id=None, timestamp=None):
     """
     Store a message in the message store
@@ -60,8 +89,8 @@ def store_message(phone_number, message_text, sender_type, message_id=None, time
     if timestamp is None:
         timestamp = datetime.now().isoformat()
 
-    # Normalize phone number (remove + prefix if present)
-    normalized_phone = phone_number.lstrip('+')
+    # Normalize phone number using comprehensive normalization
+    normalized_phone = normalize_phone_number(phone_number)
 
     message_data = {
         'id': message_id or f"{sender_type}_{len(message_store[normalized_phone])}_{timestamp}",
@@ -653,8 +682,8 @@ def get_messages(phone_number):
     Get message history for a specific phone number
     """
     try:
-        # Normalize phone number
-        normalized_phone = phone_number.lstrip('+')
+        # Normalize phone number using comprehensive normalization
+        normalized_phone = normalize_phone_number(phone_number)
         messages = message_store.get(normalized_phone, [])
 
         return jsonify({
