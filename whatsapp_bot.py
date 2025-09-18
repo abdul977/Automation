@@ -18,7 +18,10 @@ import json
 import hmac
 import hashlib
 import requests
+import redis
+import threading
 from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask_socketio import SocketIO, emit
 from dotenv import load_dotenv
 from datetime import datetime
 from collections import defaultdict
@@ -39,10 +42,34 @@ APP_SECRET = os.getenv("APP_SECRET", "your_app_secret")  # For webhook verificat
 GRAPH_API_VERSION = "v18.0"
 WHATSAPP_API_URL = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{PHONE_NUMBER_ID}/messages"
 
-# Initialize Flask app
-app = Flask(__name__)
+# Redis Configuration
+REDIS_HOST = os.getenv("REDIS_HOST", "redis-15049.c274.us-east-1-3.ec2.redns.redis-cloud.com")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "15049"))
+REDIS_USERNAME = os.getenv("REDIS_USERNAME", "default")
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "kJovVpgJkDeeZVvL5A6vhCznvWQ06kHU")
 
-# Message storage system (in-memory for now)
+# Initialize Flask app and SocketIO
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'whatsapp_bot_secret_key'
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# Initialize Redis connection
+try:
+    redis_client = redis.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        decode_responses=True,
+        username=REDIS_USERNAME,
+        password=REDIS_PASSWORD,
+    )
+    # Test connection
+    redis_client.ping()
+    print("✅ Redis connection successful!")
+except Exception as e:
+    print(f"❌ Redis connection failed: {e}")
+    redis_client = None
+
+# Message storage system (fallback to in-memory if Redis fails)
 # Structure: {phone_number: [messages]}
 message_store = defaultdict(list)
 
@@ -77,7 +104,7 @@ def normalize_phone_number(phone_number):
 
 def store_message(phone_number, message_text, sender_type, message_id=None, timestamp=None):
     """
-    Store a message in the message store
+    Store a message in both Redis and in-memory store, then emit WebSocket event
 
     Args:
         phone_number: The phone number (without + prefix for consistency)
@@ -100,10 +127,68 @@ def store_message(phone_number, message_text, sender_type, message_id=None, time
         'phone_number': normalized_phone
     }
 
+    # Store in in-memory store (fallback)
     message_store[normalized_phone].append(message_data)
+
+    # Store in Redis if available
+    if redis_client:
+        try:
+            # Store message in Redis list
+            redis_key = f"messages:{normalized_phone}"
+            redis_client.lpush(redis_key, json.dumps(message_data))
+
+            # Keep only last 100 messages per contact
+            redis_client.ltrim(redis_key, 0, 99)
+
+            # Publish real-time update
+            redis_client.publish('message_updates', json.dumps({
+                'type': 'new_message',
+                'phone_number': normalized_phone,
+                'message': message_data
+            }))
+
+        except Exception as e:
+            print(f"⚠️ Redis storage failed: {e}")
+
     print(f"📝 Stored {sender_type} message for {normalized_phone}: '{message_text[:50]}...'")
 
+    # Emit WebSocket event for real-time updates
+    try:
+        socketio.emit('new_message', {
+            'phone_number': normalized_phone,
+            'message': message_data
+        })
+    except Exception as e:
+        print(f"⚠️ WebSocket emit failed: {e}")
+
     return message_data
+
+def get_messages_from_redis(phone_number):
+    """
+    Get messages for a phone number from Redis
+    """
+    if not redis_client:
+        return []
+
+    try:
+        normalized_phone = normalize_phone_number(phone_number)
+        redis_key = f"messages:{normalized_phone}"
+
+        # Get messages from Redis (they're stored in reverse order)
+        message_strings = redis_client.lrange(redis_key, 0, -1)
+        messages = []
+
+        for msg_str in reversed(message_strings):  # Reverse to get chronological order
+            try:
+                message_data = json.loads(msg_str)
+                messages.append(message_data)
+            except json.JSONDecodeError:
+                continue
+
+        return messages
+    except Exception as e:
+        print(f"⚠️ Redis get messages failed: {e}")
+        return []
 
 def get_phone_number_id():
     """
@@ -767,12 +852,18 @@ def api_status():
 @app.route("/api/messages/<phone_number>", methods=["GET"])
 def get_messages(phone_number):
     """
-    Get message history for a specific phone number
+    Get message history for a specific phone number from Redis (with fallback to in-memory)
     """
     try:
         # Normalize phone number using comprehensive normalization
         normalized_phone = normalize_phone_number(phone_number)
-        messages = message_store.get(normalized_phone, [])
+
+        # Try to get messages from Redis first
+        messages = get_messages_from_redis(normalized_phone)
+
+        # Fallback to in-memory store if Redis is unavailable or empty
+        if not messages:
+            messages = message_store.get(normalized_phone, [])
 
         return jsonify({
             "status": "success",
@@ -871,10 +962,29 @@ def initialize_bot():
     print("  - POST /send     : Send messages manually")
     print("\n" + "="*50)
 
+# WebSocket event handlers
+@socketio.on('connect')
+def handle_connect():
+    print('🔌 Client connected to WebSocket')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('🔌 Client disconnected from WebSocket')
+
+@socketio.on('join_room')
+def handle_join_room(data):
+    """Join a room for a specific phone number to receive real-time updates"""
+    phone_number = data.get('phone_number')
+    if phone_number:
+        normalized_phone = normalize_phone_number(phone_number)
+        socketio.join_room(f"chat_{normalized_phone}")
+        print(f'📱 Client joined room for {normalized_phone}')
+
 if __name__ == "__main__":
     # Initialize bot configuration
     initialize_bot()
 
-    # Run Flask app
+    # Run Flask app with SocketIO
     port = int(os.getenv("PORT", 8000))  # Render uses PORT environment variable
-    app.run(host="0.0.0.0", port=port, debug=False)  # Disable debug in production
+    print(f"🚀 Starting server with WebSocket support on port {port}")
+    socketio.run(app, host="0.0.0.0", port=port, debug=False)

@@ -28,11 +28,9 @@ class WhatsAppChat {
             this.checkBotStatus();
         }, 30000);
 
-        // Refresh messages every 5 seconds for real-time updates
-        setInterval(() => {
-            console.log('⏰ [ENHANCED CHAT] Periodic message refresh...');
-            this.refreshMessages();
-        }, 5000);
+        // Initialize WebSocket for real-time updates
+        this.initializeWebSocket();
+        console.log('🔌 [ENHANCED CHAT] WebSocket initialized');
 
         console.log('✅ [ENHANCED CHAT] Enhanced Chat Interface initialized successfully!');
     }
@@ -46,6 +44,54 @@ class WhatsAppChat {
         this.chatStatus = document.getElementById('chatStatus');
         this.chatInputContainer = document.getElementById('chatInputContainer');
         this.addContactModal = document.getElementById('addContactModal');
+    }
+
+    initializeWebSocket() {
+        console.log('🔌 [ENHANCED CHAT] Connecting to WebSocket...');
+
+        // Initialize Socket.IO connection
+        this.socket = io();
+
+        this.socket.on('connect', () => {
+            console.log('✅ [ENHANCED CHAT] WebSocket connected successfully!');
+
+            // Join room for active contact if any
+            if (this.activeContact) {
+                this.socket.emit('join_room', { phone_number: this.activeContact.phone });
+            }
+        });
+
+        this.socket.on('disconnect', () => {
+            console.log('❌ [ENHANCED CHAT] WebSocket disconnected');
+        });
+
+        this.socket.on('new_message', (data) => {
+            console.log('📨 [ENHANCED CHAT] Received real-time message:', data);
+            this.handleNewMessage(data);
+        });
+
+        this.socket.on('connect_error', (error) => {
+            console.error('💥 [ENHANCED CHAT] WebSocket connection error:', error);
+        });
+    }
+
+    handleNewMessage(data) {
+        const { phone_number, message } = data;
+        console.log(`📱 [ENHANCED CHAT] New message for ${phone_number}:`, message);
+
+        // Update message history
+        if (!this.messageHistory[phone_number]) {
+            this.messageHistory[phone_number] = [];
+        }
+        this.messageHistory[phone_number].push(message);
+
+        // If this is the active contact, update the chat display
+        if (this.activeContact && this.normalizePhoneNumber(this.activeContact.phone) === phone_number) {
+            this.displayMessages(this.messageHistory[phone_number]);
+        }
+
+        // Update contact list to show new message
+        this.updateContactInList(phone_number, message);
     }
 
     setupEventListeners() {
@@ -169,19 +215,7 @@ class WhatsAppChat {
         }
     }
 
-    async refreshMessages() {
-        console.log('🔄 [ENHANCED CHAT] Refreshing messages and contacts...');
-        if (this.activeContact) {
-            console.log(`💬 [ENHANCED CHAT] Refreshing messages for active contact: ${this.activeContact.phone}`);
-            await this.loadMessagesForContact(this.activeContact.phone);
-        } else {
-            console.log('ℹ️ [ENHANCED CHAT] No active contact, skipping message refresh');
-        }
-        // Also refresh contacts to show new conversations
-        console.log('📋 [ENHANCED CHAT] Refreshing contacts list...');
-        await this.loadContactsFromServer();
-        console.log('✅ [ENHANCED CHAT] Refresh complete');
-    }
+    // Removed refreshMessages - using WebSocket real-time updates instead
 
     selectContact(contact) {
         this.activeContact = contact;
@@ -387,8 +421,8 @@ class WhatsAppChat {
         }
 
         // Validate phone number
-        if (!/^\d{10,15}$/.test(phone)) {
-            this.showNotification('Please enter a valid phone number (10-15 digits)', 'error');
+        if (!/^\d{10,19}$/.test(phone)) {
+            this.showNotification('Please enter a valid phone number (10-19 digits)', 'error');
             return;
         }
 
