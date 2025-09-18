@@ -46,6 +46,12 @@ class WhatsAppChat {
         this.addContactModal = document.getElementById('addContactModal');
     }
 
+    normalizePhoneNumber(phoneNumber) {
+        // Remove + prefix and any non-digit characters for consistent comparison
+        if (!phoneNumber) return phoneNumber;
+        return phoneNumber.replace(/[^\d]/g, '');
+    }
+
     initializeWebSocket() {
         console.log('🔌 [ENHANCED CHAT] Connecting to WebSocket...');
 
@@ -92,6 +98,28 @@ class WhatsAppChat {
 
         // Update contact list to show new message
         this.updateContactInList(phone_number, message);
+    }
+
+    updateContactInList(phone_number, message) {
+        // Find and update the contact in the list to show the latest message
+        const contactItems = document.querySelectorAll('.contact-item');
+        contactItems.forEach(item => {
+            const contactPhone = item.dataset.phone;
+            if (this.normalizePhoneNumber(contactPhone) === this.normalizePhoneNumber(phone_number)) {
+                // Update last message preview
+                const lastMessageElement = item.querySelector('.contact-last-message');
+                if (lastMessageElement) {
+                    const preview = message.text.length > 30 ? message.text.substring(0, 30) + '...' : message.text;
+                    lastMessageElement.textContent = preview;
+                }
+
+                // Update message count if available
+                const messageCountElement = item.querySelector('.contact-message-count');
+                if (messageCountElement && this.messageHistory[phone_number]) {
+                    messageCountElement.textContent = this.messageHistory[phone_number].length;
+                }
+            }
+        });
     }
 
     setupEventListeners() {
