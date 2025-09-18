@@ -20,6 +20,8 @@ import hashlib
 import requests
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from dotenv import load_dotenv
+from datetime import datetime
+from collections import defaultdict
 
 # Load environment variables
 load_dotenv()
@@ -39,6 +41,40 @@ WHATSAPP_API_URL = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{PHONE_NUMBE
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Message storage system (in-memory for now)
+# Structure: {phone_number: [messages]}
+message_store = defaultdict(list)
+
+def store_message(phone_number, message_text, sender_type, message_id=None, timestamp=None):
+    """
+    Store a message in the message store
+
+    Args:
+        phone_number: The phone number (without + prefix for consistency)
+        message_text: The message content
+        sender_type: 'incoming' or 'outgoing'
+        message_id: WhatsApp message ID (optional)
+        timestamp: Message timestamp (optional, defaults to now)
+    """
+    if timestamp is None:
+        timestamp = datetime.now().isoformat()
+
+    # Normalize phone number (remove + prefix if present)
+    normalized_phone = phone_number.lstrip('+')
+
+    message_data = {
+        'id': message_id or f"{sender_type}_{len(message_store[normalized_phone])}_{timestamp}",
+        'text': message_text,
+        'type': sender_type,
+        'timestamp': timestamp,
+        'phone_number': normalized_phone
+    }
+
+    message_store[normalized_phone].append(message_data)
+    print(f"📝 Stored {sender_type} message for {normalized_phone}: '{message_text[:50]}...'")
+
+    return message_data
 
 def get_phone_number_id():
     """
@@ -276,6 +312,15 @@ def handle_webhook():
                                 message_text = message.get("text", {}).get("body", "")
                                 print(f"💬 Message content: '{message_text}'")
 
+                                # Store incoming message
+                                store_message(
+                                    phone_number=sender_phone,
+                                    message_text=message_text,
+                                    sender_type='incoming',
+                                    message_id=message_id,
+                                    timestamp=datetime.now().isoformat()
+                                )
+
                                 # Generate response
                                 response_text = process_whatsapp_message(message)
                                 print(f"🤖 Generated response: '{response_text}'")
@@ -288,6 +333,14 @@ def handle_webhook():
                                         print(f"❌ Failed to send response: {result['error']}")
                                     else:
                                         print(f"✅ Response sent successfully!")
+                                        # Store outgoing response
+                                        store_message(
+                                            phone_number=sender_phone,
+                                            message_text=response_text,
+                                            sender_type='outgoing',
+                                            message_id=result.get('message_id'),
+                                            timestamp=datetime.now().isoformat()
+                                        )
                             else:
                                 print(f"⚠️ Unsupported message type: {message_type}")
         else:
@@ -322,6 +375,15 @@ def send_message_endpoint():
         result = send_whatsapp_message(to_phone, message, message_type)
 
         if result["success"]:
+            # Store outgoing message
+            store_message(
+                phone_number=to_phone,
+                message_text=message,
+                sender_type='outgoing',
+                message_id=result.get('message_id'),
+                timestamp=datetime.now().isoformat()
+            )
+
             return jsonify({
                 "status": "success",
                 "result": result["response"],
@@ -583,6 +645,83 @@ def api_status():
         "business_account_id": WHATSAPP_BUSINESS_ACCOUNT_ID,
         "webhook_url": WEBHOOK_URL
     })
+
+# API endpoints for Enhanced Chat Interface
+@app.route("/api/messages/<phone_number>", methods=["GET"])
+def get_messages(phone_number):
+    """
+    Get message history for a specific phone number
+    """
+    try:
+        # Normalize phone number
+        normalized_phone = phone_number.lstrip('+')
+        messages = message_store.get(normalized_phone, [])
+
+        return jsonify({
+            "status": "success",
+            "phone_number": normalized_phone,
+            "messages": messages,
+            "count": len(messages)
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/contacts", methods=["GET"])
+def get_contacts():
+    """
+    Get all contacts that have message history
+    """
+    try:
+        contacts = []
+        for phone_number, messages in message_store.items():
+            if messages:  # Only include contacts with messages
+                last_message = messages[-1]  # Get most recent message
+                contacts.append({
+                    "phone_number": phone_number,
+                    "display_name": f"+{phone_number}",  # Could be enhanced with actual names
+                    "last_message": last_message["text"][:50] + "..." if len(last_message["text"]) > 50 else last_message["text"],
+                    "last_message_time": last_message["timestamp"],
+                    "last_message_type": last_message["type"],
+                    "message_count": len(messages)
+                })
+
+        # Sort by most recent message
+        contacts.sort(key=lambda x: x["last_message_time"], reverse=True)
+
+        return jsonify({
+            "status": "success",
+            "contacts": contacts,
+            "count": len(contacts)
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/messages", methods=["GET"])
+def get_all_messages():
+    """
+    Get all messages across all contacts (for debugging)
+    """
+    try:
+        all_messages = []
+        for phone_number, messages in message_store.items():
+            for message in messages:
+                message_copy = message.copy()
+                message_copy["contact_phone"] = phone_number
+                all_messages.append(message_copy)
+
+        # Sort by timestamp
+        all_messages.sort(key=lambda x: x["timestamp"], reverse=True)
+
+        return jsonify({
+            "status": "success",
+            "messages": all_messages,
+            "count": len(all_messages)
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 def initialize_bot():
     """Initialize bot configuration"""

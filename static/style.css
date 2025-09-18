@@ -112,3 +112,32 @@
         padding: 15px;
     }
 }
+
+/* Enhanced contact information styles */
+.contact-last-message {
+    font-size: 12px;
+    color: #666;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+.contact-message-count {
+    font-size: 11px;
+    color: #999;
+    margin-top: 2px;
+}
+
+.contact-item:hover .contact-last-message {
+    color: #444;
+}
+
+.contact-item.active .contact-last-message {
+    color: #fff;
+}
+
+.contact-item.active .contact-message-count {
+    color: #ddd;
+}

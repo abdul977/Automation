@@ -4,15 +4,18 @@ class WhatsAppChat {
     constructor() {
         this.contacts = JSON.parse(localStorage.getItem('whatsapp_contacts') || '[]');
         this.activeContact = null;
-        this.messageHistory = JSON.parse(localStorage.getItem('whatsapp_messages') || '{}');
-        
+        this.messageHistory = {};
+
         this.initializeElements();
-        this.loadContacts();
+        this.loadContactsFromServer();
         this.setupEventListeners();
         this.checkBotStatus();
-        
+
         // Check bot status every 30 seconds
         setInterval(() => this.checkBotStatus(), 30000);
+
+        // Refresh messages every 5 seconds for real-time updates
+        setInterval(() => this.refreshMessages(), 5000);
     }
 
     initializeElements() {
@@ -51,14 +54,82 @@ class WhatsAppChat {
         this.contacts.forEach(contact => {
             const contactElement = document.createElement('div');
             contactElement.className = 'contact-item';
+
+            const lastMessageInfo = contact.lastMessage ?
+                `<div class="contact-last-message">${contact.lastMessage}</div>
+                 <div class="contact-message-count">${contact.messageCount || 0} messages</div>` :
+                '<div class="contact-last-message">No messages yet</div>';
+
             contactElement.innerHTML = `
                 <div class="contact-name">${contact.name}</div>
                 <div class="contact-phone">${contact.phone}</div>
+                ${lastMessageInfo}
             `;
-            
+
             contactElement.addEventListener('click', () => this.selectContact(contact));
             this.contactsList.appendChild(contactElement);
         });
+    }
+
+    async loadContactsFromServer() {
+        try {
+            const response = await fetch('/api/contacts');
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                // Merge server contacts with local contacts
+                const serverContacts = data.contacts.map(contact => ({
+                    name: contact.display_name,
+                    phone: `+${contact.phone_number}`,
+                    lastMessage: contact.last_message,
+                    lastMessageTime: contact.last_message_time,
+                    messageCount: contact.message_count
+                }));
+
+                // Add any local contacts that aren't on server
+                const localContacts = JSON.parse(localStorage.getItem('whatsapp_contacts') || '[]');
+                localContacts.forEach(localContact => {
+                    if (!serverContacts.find(sc => sc.phone === localContact.phone)) {
+                        serverContacts.push(localContact);
+                    }
+                });
+
+                this.contacts = serverContacts;
+                this.loadContacts();
+            }
+        } catch (error) {
+            console.error('Error loading contacts from server:', error);
+            // Fall back to local storage
+            this.loadContacts();
+        }
+    }
+
+    async loadMessagesForContact(phoneNumber) {
+        try {
+            // Remove + prefix for API call
+            const normalizedPhone = phoneNumber.replace('+', '');
+            const response = await fetch(`/api/messages/${normalizedPhone}`);
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                this.messageHistory[phoneNumber] = data.messages;
+                this.displayMessages();
+            }
+        } catch (error) {
+            console.error('Error loading messages:', error);
+            // Fall back to local storage
+            const localMessages = JSON.parse(localStorage.getItem('whatsapp_messages') || '{}');
+            this.messageHistory[phoneNumber] = localMessages[phoneNumber] || [];
+            this.displayMessages();
+        }
+    }
+
+    async refreshMessages() {
+        if (this.activeContact) {
+            await this.loadMessagesForContact(this.activeContact.phone);
+        }
+        // Also refresh contacts to show new conversations
+        await this.loadContactsFromServer();
     }
 
     selectContact(contact) {
@@ -75,8 +146,8 @@ class WhatsAppChat {
         this.chatStatus.textContent = `📱 ${contact.phone}`;
         this.chatInputContainer.style.display = 'flex';
         
-        // Load message history
-        this.loadMessageHistory(contact.phone);
+        // Load message history from server
+        this.loadMessagesForContact(contact.phone);
         this.messageInput.focus();
     }
 
@@ -92,6 +163,38 @@ class WhatsAppChat {
         messages.forEach(msg => {
             this.addMessage(msg.text, msg.type, msg.timestamp);
         });
+    }
+
+    displayMessages() {
+        if (!this.activeContact) return;
+
+        const messages = this.messageHistory[this.activeContact.phone] || [];
+        this.chatMessages.innerHTML = '';
+
+        if (messages.length === 0) {
+            this.addSystemMessage(`Start chatting with ${this.activeContact.name}! 💬`);
+            return;
+        }
+
+        messages.forEach(msg => {
+            this.addMessageFromServer(msg);
+        });
+    }
+
+    addMessageFromServer(messageData) {
+        const messageDiv = document.createElement('div');
+        const messageType = messageData.type === 'incoming' ? 'received' : 'sent';
+        messageDiv.className = `message ${messageType}`;
+
+        const timeStr = new Date(messageData.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+        messageDiv.innerHTML = `
+            <div>${this.escapeHtml(messageData.text)}</div>
+            <div class="message-time">${timeStr}</div>
+        `;
+
+        this.chatMessages.appendChild(messageDiv);
+        this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
     }
 
     addMessage(text, type, timestamp = null) {
@@ -185,6 +288,8 @@ class WhatsAppChat {
             
             if (response.ok) {
                 this.showNotification('Message sent successfully!', 'success');
+                // Refresh messages to show the sent message from server
+                setTimeout(() => this.loadMessagesForContact(this.activeContact.phone), 1000);
             } else {
                 this.showNotification(`Failed to send: ${result.message || 'Unknown error'}`, 'error');
             }
