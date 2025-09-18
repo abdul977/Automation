@@ -92,12 +92,58 @@ class WhatsAppChat {
         this.messageHistory[phone_number].push(message);
 
         // If this is the active contact, update the chat display
-        if (this.activeContact && this.normalizePhoneNumber(this.activeContact.phone) === phone_number) {
-            this.displayMessages(this.messageHistory[phone_number]);
+        if (this.activeContact) {
+            const activePhoneNormalized = this.normalizePhoneNumber(this.activeContact.phone);
+            console.log(`🔍 [ENHANCED CHAT] Checking if message is for active contact:`);
+            console.log(`   Active contact phone: ${this.activeContact.phone}`);
+            console.log(`   Active normalized: ${activePhoneNormalized}`);
+            console.log(`   Message phone: ${phone_number}`);
+            console.log(`   Match: ${activePhoneNormalized === phone_number}`);
+
+            if (activePhoneNormalized === phone_number) {
+                console.log(`✅ [ENHANCED CHAT] Message is for active contact, updating display`);
+                this.displayMessages();
+            }
+        } else {
+            console.log(`ℹ️ [ENHANCED CHAT] No active contact selected`);
         }
 
         // Update contact list to show new message
         this.updateContactInList(phone_number, message);
+    }
+
+    updateContactInList(phone_number, message) {
+        console.log(`📋 [ENHANCED CHAT] Updating contact list for ${phone_number} with new message`);
+
+        // Find or create contact in the list
+        let contact = this.contacts.find(c => this.normalizePhoneNumber(c.phone) === phone_number);
+
+        if (!contact) {
+            // Create new contact if not exists
+            contact = {
+                name: `+${phone_number}`,
+                phone: `+${phone_number}`,
+                lastMessage: message.text,
+                lastMessageTime: message.timestamp,
+                messageCount: 1
+            };
+            this.contacts.unshift(contact); // Add to beginning of list
+            console.log(`➕ [ENHANCED CHAT] Created new contact for ${phone_number}`);
+        } else {
+            // Update existing contact
+            contact.lastMessage = message.text;
+            contact.lastMessageTime = message.timestamp;
+            contact.messageCount = (contact.messageCount || 0) + 1;
+            console.log(`🔄 [ENHANCED CHAT] Updated existing contact for ${phone_number}`);
+        }
+
+        // Save to localStorage
+        localStorage.setItem('whatsapp_contacts', JSON.stringify(this.contacts));
+
+        // Refresh the contact list display
+        this.displayContacts();
+
+        console.log(`✅ [ENHANCED CHAT] Contact list updated for ${phone_number}`);
     }
 
     updateContactInList(phone_number, message) {
