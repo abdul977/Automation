@@ -661,14 +661,48 @@ def test_incoming_message():
                     messages = value.get('messages', [])
 
                     for message in messages:
-                        print(f"🧪 [TEST] Processing simulated message: {message}")
-                        response = process_whatsapp_message(message)
-                        print(f"🧪 [TEST] Process response: {response}")
+                        # Extract sender information
+                        sender_phone = message.get("from")
+                        message_id = message.get("id")
+                        message_type = message.get("type")
 
-        return jsonify({"status": "success", "message": "Test message processed"}), 200
+                        print(f"🧪 [TEST] Processing {message_type} message from {sender_phone} (ID: {message_id})")
+
+                        # Only process text messages
+                        if message_type == "text":
+                            message_text = message.get("text", {}).get("body", "")
+                            print(f"🧪 [TEST] Message content: '{message_text}'")
+
+                            # Store incoming message
+                            store_message(
+                                phone_number=sender_phone,
+                                message_text=message_text,
+                                sender_type='incoming',
+                                message_id=message_id,
+                                timestamp=datetime.now().isoformat()
+                            )
+                            print(f"🧪 [TEST] Stored incoming message from {sender_phone}")
+
+                            # Generate response
+                            response_text = process_whatsapp_message(message)
+                            print(f"🧪 [TEST] Generated response: '{response_text}'")
+
+                            # Store outgoing response (simulated - not actually sent)
+                            store_message(
+                                phone_number=sender_phone,
+                                message_text=response_text,
+                                sender_type='outgoing',
+                                message_id=f"test_response_{message_id}",
+                                timestamp=datetime.now().isoformat()
+                            )
+                            print(f"🧪 [TEST] Stored outgoing response to {sender_phone}")
+
+        return jsonify({"status": "success", "message": "Test message processed and stored"}), 200
 
     except Exception as e:
         print(f"🧪 [TEST] Error processing test message: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/", methods=["GET"])
