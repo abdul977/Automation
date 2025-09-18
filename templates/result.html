@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Message Sent</title>
+</head>
+<body>
+    <h1>Message Status</h1>
+    <p>Status Code: {{ status_code }}</p>
+    <h2>Response:</h2>
+    <pre>{{ response_json | tojson(indent=2) }}</pre>
+    <a href="/">Send another message</a>
+</body>
+</html>

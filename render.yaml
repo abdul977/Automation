@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: whatsapp-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python whatsapp_bot.py
+    envVars:
+      - key: VERIFY_TOKEN
+        value: whatsapp_verify_token_2024
+      - key: WHATSAPP_TOKEN
+        value: EAAQEKbLnBZAMBPetZCCPqKZALn7S5D1LswpqvOQhDajKepWyaMzZAdzHDwLYsDVK5ZCbR0nhxU2nYM7UvdMvVcWBahJA4iIuZBVPIP2vqGN8apucWAj9Dnp21vuKDS4PP78qFB87Xf330gmjECckjo7Owq4ank8ZA5ZB659by2Vz7ZAOZAub7B05yi6OrfGwvikQZDZD
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        value: "2139592896448288"
+      - key: APP_ID
+        value: "1130477048497555"
+      - key: PHONE_NUMBER_ID
+        value: "837445062775054"
+    plan: free
