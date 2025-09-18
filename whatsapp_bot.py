@@ -987,4 +987,7 @@ if __name__ == "__main__":
     # Run Flask app with SocketIO
     port = int(os.getenv("PORT", 8000))  # Render uses PORT environment variable
     print(f"🚀 Starting server with WebSocket support on port {port}")
-    socketio.run(app, host="0.0.0.0", port=port, debug=False)
+
+    # Use allow_unsafe_werkzeug for production deployment
+    # In a real production environment, you'd use a proper WSGI server
+    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
