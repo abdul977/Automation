@@ -165,14 +165,15 @@ def send_whatsapp_message(to_phone_number, message_text, message_type="text"):
         "Content-Type": "application/json"
     }
 
-    # Clean phone number (remove + if present)
-    clean_phone = to_phone_number.replace("+", "").strip()
+    # Format phone number for WhatsApp API (needs + prefix and international format)
+    normalized_phone = normalize_phone_number(to_phone_number)
+    formatted_phone = f"+{normalized_phone}"
 
     if message_type == "template":
         # Send template message (for first contact)
         payload = {
             "messaging_product": "whatsapp",
-            "to": clean_phone,
+            "to": formatted_phone,
             "type": "template",
             "template": {
                 "name": "hello_world",  # Default template
@@ -185,7 +186,7 @@ def send_whatsapp_message(to_phone_number, message_text, message_type="text"):
         # Send regular text message
         payload = {
             "messaging_product": "whatsapp",
-            "to": clean_phone,
+            "to": formatted_phone,
             "type": "text",
             "text": {
                 "body": message_text
@@ -193,7 +194,7 @@ def send_whatsapp_message(to_phone_number, message_text, message_type="text"):
         }
 
     try:
-        print(f"Sending {message_type} message to {clean_phone}")
+        print(f"Sending {message_type} message to {formatted_phone} (normalized from {to_phone_number})")
         print(f"Payload: {json.dumps(payload, indent=2)}")
 
         response = requests.post(WHATSAPP_API_URL, headers=headers, json=payload)
