@@ -204,12 +204,12 @@ def send_whatsapp_message(to_phone_number, message_text, message_type="text"):
         print(f"API Response: {json.dumps(response_data, indent=2)}")
 
         if response.status_code == 200:
-            print(f"✅ Message sent successfully to {clean_phone}")
+            print(f"✅ Message sent successfully to {formatted_phone}")
             return {
                 "success": True,
                 "response": response_data,
                 "message_id": response_data.get("messages", [{}])[0].get("id"),
-                "phone_number": clean_phone
+                "phone_number": formatted_phone
             }
         else:
             error_msg = response_data.get("error", {}).get("message", "Unknown error")
@@ -218,7 +218,7 @@ def send_whatsapp_message(to_phone_number, message_text, message_type="text"):
                 "success": False,
                 "error": error_msg,
                 "response": response_data,
-                "phone_number": clean_phone
+                "phone_number": formatted_phone
             }
 
     except requests.exceptions.RequestException as e:
@@ -232,7 +232,7 @@ def send_whatsapp_message(to_phone_number, message_text, message_type="text"):
                     "success": False,
                     "error": error_response.get("error", {}).get("message", error_msg),
                     "response": error_response,
-                    "phone_number": clean_phone
+                    "phone_number": formatted_phone
                 }
             except:
                 print(f"Raw Error Response: {e.response.text}")
@@ -240,7 +240,7 @@ def send_whatsapp_message(to_phone_number, message_text, message_type="text"):
         return {
             "success": False,
             "error": error_msg,
-            "phone_number": clean_phone
+            "phone_number": formatted_phone
         }
 
 def process_whatsapp_message(message_data):
@@ -617,6 +617,59 @@ def user_guide():
         <em>Save this number and send "Hi" to get started! 🚀</em>
     </p>
     """
+
+@app.route('/test-incoming', methods=['POST'])
+def test_incoming_message():
+    """Test endpoint to simulate an incoming WhatsApp message"""
+    print("🧪 [TEST] Simulating incoming WhatsApp message...")
+
+    # Simulate incoming message data
+    test_message_data = {
+        "object": "whatsapp_business_account",
+        "entry": [{
+            "id": "2139592896448288",
+            "changes": [{
+                "value": {
+                    "messaging_product": "whatsapp",
+                    "metadata": {
+                        "display_phone_number": "837445062775054",
+                        "phone_number_id": "837445062775054"
+                    },
+                    "messages": [{
+                        "from": "2349025794407",
+                        "id": "wamid.TEST123456789",
+                        "timestamp": "1726662000",
+                        "text": {
+                            "body": "Hello! Testing incoming message."
+                        },
+                        "type": "text"
+                    }]
+                },
+                "field": "messages"
+            }]
+        }]
+    }
+
+    print(f"🧪 [TEST] Simulated message data: {json.dumps(test_message_data, indent=2)}")
+
+    # Process the simulated message using the same logic as the real webhook
+    try:
+        for entry in test_message_data.get('entry', []):
+            for change in entry.get('changes', []):
+                if change.get('field') == 'messages':
+                    value = change.get('value', {})
+                    messages = value.get('messages', [])
+
+                    for message in messages:
+                        print(f"🧪 [TEST] Processing simulated message: {message}")
+                        response = process_whatsapp_message(message)
+                        print(f"🧪 [TEST] Process response: {response}")
+
+        return jsonify({"status": "success", "message": "Test message processed"}), 200
+
+    except Exception as e:
+        print(f"🧪 [TEST] Error processing test message: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/", methods=["GET"])
 def home():
