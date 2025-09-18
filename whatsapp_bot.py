@@ -29,7 +29,7 @@ WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN", "EAAQEKbLnBZAMBPetZCCPqKZALn7S5D1Ls
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "whatsapp_verify_token_2024")  # Set this in your webhook config
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID", "YOUR_PHONE_NUMBER_ID")  # Get from WhatsApp Business API dashboard
 WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID", "2139592896448288")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://botsailor.com/webhook/whatsapp-webhook")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://automation-9lq8.onrender.com/webook")
 APP_ID = os.getenv("APP_ID", "1130477048497555")
 APP_SECRET = os.getenv("APP_SECRET", "your_app_secret")  # For webhook verification
 
