@@ -29,11 +29,29 @@ from collections import defaultdict
 # Load environment variables
 load_dotenv()
 
-# Configuration - Update these with your actual values
-WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN", "EAAQEKbLnBZAMBPetZCCPqKZALn7S5D1LswpqvOQhDajKepWyaMzZAdzHDwLYsDVK5ZCbR0nhxU2nYM7UvdMvVcWBahJA4iIuZBVPIP2vqGN8apucWAj9Dnp21vuKDS4PP78qFB87Xf330gmjECckjo7Owq4ank8ZA5ZB659by2Vz7ZAOZAub7B05yi6OrfGwvikQZDZD")
+# Multi-Account Configuration System
+WHATSAPP_ACCOUNTS = {
+    "main": {
+        "name": "Main Business Account",
+        "token": os.getenv("WHATSAPP_TOKEN", "EAAQEKbLnBZAMBPetZCCPqKZALn7S5D1LswpqvOQhDajKepWyaMzZAdzHDwLYsDVK5ZCbR0nhxU2nYM7UvdMvVcWBahJA4iIuZBVPIP2vqGN8apucWAj9Dnp21vuKDS4PP78qFB87Xf330gmjECckjo7Owq4ank8ZA5ZB659by2Vz7ZAOZAub7B05yi6OrfGwvikQZDZD"),
+        "phone_number_id": os.getenv("PHONE_NUMBER_ID", "837445062775054"),
+        "business_account_id": os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID", "2139592896448288"),
+        "status": "active"
+    },
+    "secondary": {
+        "name": "Secondary Business Account",
+        "token": os.getenv("WHATSAPP_TOKEN_2", "EAAQEKbLnBZAMBPetZCCPqKZALn7S5D1LswpqvOQhDajKepWyaMzZAdzHDwLYsDVK5ZCbR0nhxU2nYM7UvdMvVcWBahJA4iIuZBVPIP2vqGN8apucWAj9Dnp21vuKDS4PP78qFB87Xf330gmjECckjo7Owq4ank8ZA5ZB659by2Vz7ZAOZAub7B05yi6OrfGwvikQZDZD"),
+        "phone_number_id": os.getenv("PHONE_NUMBER_ID_2", "123456789012345"),
+        "business_account_id": os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID_2", "9876543210987654"),
+        "status": "active"
+    }
+}
+
+# Legacy Configuration (for backward compatibility)
+WHATSAPP_TOKEN = WHATSAPP_ACCOUNTS["main"]["token"]
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "whatsapp_verify_token_2024")  # Set this in your webhook config
-PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID", "YOUR_PHONE_NUMBER_ID")  # Get from WhatsApp Business API dashboard
-WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID", "2139592896448288")
+PHONE_NUMBER_ID = WHATSAPP_ACCOUNTS["main"]["phone_number_id"]
+WHATSAPP_BUSINESS_ACCOUNT_ID = WHATSAPP_ACCOUNTS["main"]["business_account_id"]
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://automation-9lq8.onrender.com/webhook")
 APP_ID = os.getenv("APP_ID", "1130477048497555")
 APP_SECRET = os.getenv("APP_SECRET", "your_app_secret")  # For webhook verification
@@ -41,6 +59,9 @@ APP_SECRET = os.getenv("APP_SECRET", "your_app_secret")  # For webhook verificat
 # WhatsApp API Configuration
 GRAPH_API_VERSION = "v18.0"
 WHATSAPP_API_URL = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{PHONE_NUMBER_ID}/messages"
+
+# Default account for legacy compatibility
+DEFAULT_ACCOUNT_ID = "main"
 
 # Redis Configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "redis-15049.c274.us-east-1-3.ec2.redns.redis-cloud.com")
@@ -70,8 +91,46 @@ except Exception as e:
     redis_client = None
 
 # Message storage system (fallback to in-memory if Redis fails)
-# Structure: {phone_number: [messages]}
-message_store = defaultdict(list)
+# Structure: {account_id: {phone_number: [messages]}}
+message_store = defaultdict(lambda: defaultdict(list))
+
+# Multi-Account Helper Functions
+def get_account_config(account_id):
+    """Get configuration for a specific account"""
+    return WHATSAPP_ACCOUNTS.get(account_id)
+
+def get_account_api_url(account_id):
+    """Get WhatsApp API URL for a specific account"""
+    account = get_account_config(account_id)
+    if not account:
+        return None
+    return f"https://graph.facebook.com/{GRAPH_API_VERSION}/{account['phone_number_id']}/messages"
+
+def validate_account_id(account_id):
+    """Validate if account ID exists and is active"""
+    account = get_account_config(account_id)
+    return account is not None and account.get('status') == 'active'
+
+def get_all_accounts():
+    """Get all available accounts"""
+    return [
+        {
+            "id": account_id,
+            "name": config["name"],
+            "phone_number_id": config["phone_number_id"],
+            "business_account_id": config["business_account_id"],
+            "status": config["status"]
+        }
+        for account_id, config in WHATSAPP_ACCOUNTS.items()
+        if config.get('status') == 'active'
+    ]
+
+def get_account_by_phone_number_id(phone_number_id):
+    """Get account ID by phone number ID (for webhook processing)"""
+    for account_id, config in WHATSAPP_ACCOUNTS.items():
+        if config.get('phone_number_id') == phone_number_id and config.get('status') == 'active':
+            return account_id
+    return DEFAULT_ACCOUNT_ID  # Fallback to default account
 
 def normalize_phone_number(phone_number):
     """
@@ -102,7 +161,7 @@ def normalize_phone_number(phone_number):
         # Return as-is for other formats
         return digits_only
 
-def store_message(phone_number, message_text, sender_type, message_id=None, timestamp=None):
+def store_message(phone_number, message_text, sender_type, message_id=None, timestamp=None, account_id=None):
     """
     Store a message in both Redis and in-memory store, then emit WebSocket event
 
@@ -112,37 +171,43 @@ def store_message(phone_number, message_text, sender_type, message_id=None, time
         sender_type: 'incoming' or 'outgoing'
         message_id: WhatsApp message ID (optional)
         timestamp: Message timestamp (optional, defaults to now)
+        account_id: Account ID for multi-account support (optional, defaults to main)
     """
     if timestamp is None:
         timestamp = datetime.now().isoformat()
+
+    if account_id is None:
+        account_id = DEFAULT_ACCOUNT_ID
 
     # Normalize phone number using comprehensive normalization
     normalized_phone = normalize_phone_number(phone_number)
 
     message_data = {
-        'id': message_id or f"{sender_type}_{len(message_store[normalized_phone])}_{timestamp}",
+        'id': message_id or f"{sender_type}_{len(message_store[account_id][normalized_phone])}_{timestamp}",
         'text': message_text,
         'type': sender_type,
         'timestamp': timestamp,
-        'phone_number': normalized_phone
+        'phone_number': normalized_phone,
+        'account_id': account_id
     }
 
     # Store in in-memory store (fallback)
-    message_store[normalized_phone].append(message_data)
+    message_store[account_id][normalized_phone].append(message_data)
 
     # Store in Redis if available
     if redis_client:
         try:
-            # Store message in Redis list
-            redis_key = f"messages:{normalized_phone}"
+            # Store message in Redis list with account-specific key
+            redis_key = f"messages:{account_id}:{normalized_phone}"
             redis_client.lpush(redis_key, json.dumps(message_data))
 
             # Keep only last 100 messages per contact
             redis_client.ltrim(redis_key, 0, 99)
 
-            # Publish real-time update
+            # Publish real-time update with account information
             redis_client.publish('message_updates', json.dumps({
                 'type': 'new_message',
+                'account_id': account_id,
                 'phone_number': normalized_phone,
                 'message': message_data
             }))
@@ -150,11 +215,12 @@ def store_message(phone_number, message_text, sender_type, message_id=None, time
         except Exception as e:
             print(f"⚠️ Redis storage failed: {e}")
 
-    print(f"📝 Stored {sender_type} message for {normalized_phone}: '{message_text[:50]}...'")
+    print(f"📝 Stored {sender_type} message for {normalized_phone} (Account: {account_id}): '{message_text[:50]}...'")
 
-    # Emit WebSocket event for real-time updates
+    # Emit WebSocket event for real-time updates with account information
     try:
         socketio.emit('new_message', {
+            'account_id': account_id,
             'phone_number': normalized_phone,
             'message': message_data
         })
@@ -163,16 +229,19 @@ def store_message(phone_number, message_text, sender_type, message_id=None, time
 
     return message_data
 
-def get_messages_from_redis(phone_number):
+def get_messages_from_redis(phone_number, account_id=None):
     """
-    Get messages for a phone number from Redis
+    Get messages for a phone number from Redis for a specific account
     """
     if not redis_client:
         return []
 
+    if account_id is None:
+        account_id = DEFAULT_ACCOUNT_ID
+
     try:
         normalized_phone = normalize_phone_number(phone_number)
-        redis_key = f"messages:{normalized_phone}"
+        redis_key = f"messages:{account_id}:{normalized_phone}"
 
         # Get messages from Redis (they're stored in reverse order)
         message_strings = redis_client.lrange(redis_key, 0, -1)
@@ -233,7 +302,7 @@ def verify_webhook_signature(payload, signature):
     
     return hmac.compare_digest(f"sha256={expected_signature}", signature)
 
-def send_whatsapp_message(to_phone_number, message_text, message_type="text"):
+def send_whatsapp_message(to_phone_number, message_text, message_type="text", account_id=None):
     """
     Send a message via WhatsApp Business API
 
@@ -241,12 +310,25 @@ def send_whatsapp_message(to_phone_number, message_text, message_type="text"):
         to_phone_number (str): Recipient's phone number (with country code, no + sign)
         message_text (str): Message content to send
         message_type (str): Type of message ("text" or "template")
+        account_id (str): Account ID to send from (optional, defaults to main)
 
     Returns:
         dict: API response with detailed status
     """
+    if account_id is None:
+        account_id = DEFAULT_ACCOUNT_ID
+
+    # Get account configuration
+    account_config = get_account_config(account_id)
+    if not account_config:
+        return {
+            "success": False,
+            "error": f"Invalid account ID: {account_id}",
+            "phone_number": to_phone_number
+        }
+
     headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Authorization": f"Bearer {account_config['token']}",
         "Content-Type": "application/json"
     }
 
@@ -279,10 +361,14 @@ def send_whatsapp_message(to_phone_number, message_text, message_type="text"):
         }
 
     try:
-        print(f"Sending {message_type} message to {formatted_phone} (normalized from {to_phone_number})")
+        # Get account-specific API URL
+        api_url = get_account_api_url(account_id)
+
+        print(f"Sending {message_type} message to {formatted_phone} (normalized from {to_phone_number}) via account {account_id}")
+        print(f"API URL: {api_url}")
         print(f"Payload: {json.dumps(payload, indent=2)}")
 
-        response = requests.post(WHATSAPP_API_URL, headers=headers, json=payload)
+        response = requests.post(api_url, headers=headers, json=payload)
         response_data = response.json()
 
         print(f"API Response Status: {response.status_code}")
@@ -412,7 +498,12 @@ def handle_webhook():
                         value = change.get("value", {})
                         messages = value.get("messages", [])
 
-                        print(f"📱 Found {len(messages)} message(s)")
+                        # Extract phone number ID to determine which account received the message
+                        metadata = value.get("metadata", {})
+                        phone_number_id = metadata.get("phone_number_id")
+                        account_id = get_account_by_phone_number_id(phone_number_id) if phone_number_id else DEFAULT_ACCOUNT_ID
+
+                        print(f"📱 Found {len(messages)} message(s) for account {account_id} (phone_number_id: {phone_number_id})")
 
                         for message in messages:
                             # Extract sender information
@@ -420,41 +511,43 @@ def handle_webhook():
                             message_id = message.get("id")
                             message_type = message.get("type")
 
-                            print(f"📨 Received {message_type} message from {sender_phone} (ID: {message_id})")
+                            print(f"📨 Received {message_type} message from {sender_phone} (ID: {message_id}) for account {account_id}")
 
                             # Only process text messages
                             if message_type == "text":
                                 message_text = message.get("text", {}).get("body", "")
                                 print(f"💬 Message content: '{message_text}'")
 
-                                # Store incoming message
+                                # Store incoming message with account ID
                                 store_message(
                                     phone_number=sender_phone,
                                     message_text=message_text,
                                     sender_type='incoming',
                                     message_id=message_id,
-                                    timestamp=datetime.now().isoformat()
+                                    timestamp=datetime.now().isoformat(),
+                                    account_id=account_id
                                 )
 
                                 # Generate response
                                 response_text = process_whatsapp_message(message)
                                 print(f"🤖 Generated response: '{response_text}'")
 
-                                # Send response back
+                                # Send response back using the same account
                                 if sender_phone and response_text:
-                                    print(f"📤 Sending response to {sender_phone}")
-                                    result = send_whatsapp_message(sender_phone, response_text)
+                                    print(f"📤 Sending response to {sender_phone} via account {account_id}")
+                                    result = send_whatsapp_message(sender_phone, response_text, "text", account_id)
                                     if not result["success"]:
                                         print(f"❌ Failed to send response: {result['error']}")
                                     else:
                                         print(f"✅ Response sent successfully!")
-                                        # Store outgoing response
+                                        # Store outgoing response with account ID
                                         store_message(
                                             phone_number=sender_phone,
                                             message_text=response_text,
                                             sender_type='outgoing',
                                             message_id=result.get('message_id'),
-                                            timestamp=datetime.now().isoformat()
+                                            timestamp=datetime.now().isoformat(),
+                                            account_id=account_id
                                         )
                             else:
                                 print(f"⚠️ Unsupported message type: {message_type}")
@@ -472,14 +565,15 @@ def handle_webhook():
 @app.route("/send", methods=["POST"])
 def send_message_endpoint():
     """
-    Manual endpoint to send messages
-    Usage: POST /send with JSON body: {"to": "phone_number", "message": "text", "type": "text|template"}
+    Manual endpoint to send messages (supports multi-account)
+    Usage: POST /send with JSON body: {"to": "phone_number", "message": "text", "type": "text|template", "account_id": "main"}
     """
     try:
         data = request.get_json()
         to_phone = data.get("to")
         message = data.get("message", "")
         message_type = data.get("type", "text")
+        account_id = data.get("account_id", DEFAULT_ACCOUNT_ID)  # Support account selection
 
         if not to_phone:
             return jsonify({"error": "Missing 'to' parameter"}), 400
@@ -487,16 +581,21 @@ def send_message_endpoint():
         if message_type == "text" and not message:
             return jsonify({"error": "Missing 'message' parameter for text messages"}), 400
 
-        result = send_whatsapp_message(to_phone, message, message_type)
+        # Validate account ID if provided
+        if account_id != DEFAULT_ACCOUNT_ID and not validate_account_id(account_id):
+            return jsonify({"error": f"Invalid or inactive account ID: {account_id}"}), 400
+
+        result = send_whatsapp_message(to_phone, message, message_type, account_id)
 
         if result["success"]:
-            # Store outgoing message
+            # Store outgoing message with account ID
             store_message(
                 phone_number=to_phone,
                 message_text=message,
                 sender_type='outgoing',
                 message_id=result.get('message_id'),
-                timestamp=datetime.now().isoformat()
+                timestamp=datetime.now().isoformat(),
+                account_id=account_id
             )
 
             return jsonify({
@@ -504,6 +603,7 @@ def send_message_endpoint():
                 "result": result["response"],
                 "message_id": result.get("message_id"),
                 "phone_number": result["phone_number"],
+                "account_id": account_id,
                 "delivery_info": "Message accepted by WhatsApp API. Delivery depends on recipient's opt-in status and 24-hour messaging window."
             }), 200
         else:
@@ -511,6 +611,7 @@ def send_message_endpoint():
                 "status": "error",
                 "message": result["error"],
                 "phone_number": result["phone_number"],
+                "account_id": account_id,
                 "details": result.get("response", {})
             }), 400
 
@@ -848,25 +949,176 @@ def api_status():
         "webhook_url": WEBHOOK_URL
     })
 
-# API endpoints for Enhanced Chat Interface
+# Multi-Account Management APIs
+@app.route("/api/accounts", methods=["GET"])
+def get_accounts_api():
+    """
+    Get all available WhatsApp accounts
+    """
+    try:
+        accounts = get_all_accounts()
+        return jsonify({
+            "status": "success",
+            "accounts": accounts,
+            "count": len(accounts)
+        }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/accounts/<account_id>/send", methods=["POST"])
+def send_message_from_account_api(account_id):
+    """
+    Send message from specific account
+    Usage: POST /api/accounts/{account_id}/send with JSON body: {"to": "phone_number", "message": "text", "type": "text|template"}
+    """
+    try:
+        # Validate account ID
+        if not validate_account_id(account_id):
+            return jsonify({"error": f"Invalid or inactive account ID: {account_id}"}), 400
+
+        data = request.get_json()
+        to_phone = data.get("to")
+        message = data.get("message", "")
+        message_type = data.get("type", "text")
+
+        if not to_phone:
+            return jsonify({"error": "Missing 'to' parameter"}), 400
+
+        if message_type == "text" and not message:
+            return jsonify({"error": "Missing 'message' parameter for text messages"}), 400
+
+        # Send message using specific account
+        result = send_whatsapp_message(to_phone, message, message_type, account_id)
+
+        if result["success"]:
+            # Store outgoing message with account ID
+            store_message(
+                phone_number=to_phone,
+                message_text=message,
+                sender_type='outgoing',
+                message_id=result.get('message_id'),
+                timestamp=datetime.now().isoformat(),
+                account_id=account_id
+            )
+
+            return jsonify({
+                "status": "success",
+                "result": result["response"],
+                "message_id": result.get("message_id"),
+                "phone_number": result["phone_number"],
+                "account_id": account_id,
+                "delivery_info": "Message accepted by WhatsApp API. Delivery depends on recipient's opt-in status and 24-hour messaging window."
+            }), 200
+        else:
+            return jsonify({
+                "status": "error",
+                "message": result["error"],
+                "phone_number": result["phone_number"],
+                "account_id": account_id,
+                "details": result.get("response", {})
+            }), 400
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/accounts/<account_id>/messages/<phone_number>", methods=["GET"])
+def get_account_messages(account_id, phone_number):
+    """
+    Get message history for a specific phone number from a specific account
+    """
+    try:
+        # Validate account ID
+        if not validate_account_id(account_id):
+            return jsonify({"error": f"Invalid or inactive account ID: {account_id}"}), 400
+
+        # Normalize phone number
+        normalized_phone = normalize_phone_number(phone_number)
+
+        # Try to get messages from Redis first
+        messages = get_messages_from_redis(normalized_phone, account_id)
+
+        # Fallback to in-memory store if Redis is unavailable or empty
+        if not messages:
+            messages = message_store.get(account_id, {}).get(normalized_phone, [])
+
+        return jsonify({
+            "status": "success",
+            "account_id": account_id,
+            "phone_number": normalized_phone,
+            "messages": messages,
+            "count": len(messages)
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/accounts/<account_id>/contacts", methods=["GET"])
+def get_account_contacts(account_id):
+    """
+    Get all contacts with message history for a specific account
+    """
+    try:
+        # Validate account ID
+        if not validate_account_id(account_id):
+            return jsonify({"error": f"Invalid or inactive account ID: {account_id}"}), 400
+
+        contacts = []
+
+        # Get contacts from in-memory store for this account
+        account_messages = message_store.get(account_id, {})
+        for phone_number, messages in account_messages.items():
+            if messages:  # Only include contacts with messages
+                last_message = messages[-1]  # Get most recent message
+                contacts.append({
+                    "phone": phone_number,
+                    "name": f"Contact {phone_number[-4:]}",  # Simple name based on last 4 digits
+                    "last_message": last_message.get("text", ""),
+                    "last_message_time": last_message.get("timestamp", ""),
+                    "message_count": len(messages),
+                    "last_message_type": last_message.get("type", "")
+                })
+
+        # Sort contacts by last message time (most recent first)
+        contacts.sort(key=lambda x: x["last_message_time"], reverse=True)
+
+        return jsonify({
+            "status": "success",
+            "account_id": account_id,
+            "contacts": contacts,
+            "count": len(contacts)
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# API endpoints for Enhanced Chat Interface (Legacy - maintained for backward compatibility)
 @app.route("/api/messages/<phone_number>", methods=["GET"])
 def get_messages(phone_number):
     """
-    Get message history for a specific phone number from Redis (with fallback to in-memory)
+    Get message history for a specific phone number (supports account_id parameter for multi-account)
+    Usage: GET /api/messages/{phone_number}?account_id=main
     """
     try:
+        # Get account_id from query parameters (defaults to main for backward compatibility)
+        account_id = request.args.get('account_id', DEFAULT_ACCOUNT_ID)
+
+        # Validate account ID if provided
+        if account_id != DEFAULT_ACCOUNT_ID and not validate_account_id(account_id):
+            return jsonify({"error": f"Invalid or inactive account ID: {account_id}"}), 400
+
         # Normalize phone number using comprehensive normalization
         normalized_phone = normalize_phone_number(phone_number)
 
         # Try to get messages from Redis first
-        messages = get_messages_from_redis(normalized_phone)
+        messages = get_messages_from_redis(normalized_phone, account_id)
 
         # Fallback to in-memory store if Redis is unavailable or empty
         if not messages:
-            messages = message_store.get(normalized_phone, [])
+            messages = message_store.get(account_id, {}).get(normalized_phone, [])
 
         return jsonify({
             "status": "success",
+            "account_id": account_id,
             "phone_number": normalized_phone,
             "messages": messages,
             "count": len(messages)
@@ -878,11 +1130,21 @@ def get_messages(phone_number):
 @app.route("/api/contacts", methods=["GET"])
 def get_contacts():
     """
-    Get all contacts that have message history
+    Get all contacts that have message history (supports account_id parameter for multi-account)
+    Usage: GET /api/contacts?account_id=main
     """
     try:
+        # Get account_id from query parameters (defaults to main for backward compatibility)
+        account_id = request.args.get('account_id', DEFAULT_ACCOUNT_ID)
+
+        # Validate account ID if provided
+        if account_id != DEFAULT_ACCOUNT_ID and not validate_account_id(account_id):
+            return jsonify({"error": f"Invalid or inactive account ID: {account_id}"}), 400
+
         contacts = []
-        for phone_number, messages in message_store.items():
+        account_messages = message_store.get(account_id, {})
+
+        for phone_number, messages in account_messages.items():
             if messages:  # Only include contacts with messages
                 last_message = messages[-1]  # Get most recent message
                 contacts.append({
@@ -899,6 +1161,7 @@ def get_contacts():
 
         return jsonify({
             "status": "success",
+            "account_id": account_id,
             "contacts": contacts,
             "count": len(contacts)
         }), 200

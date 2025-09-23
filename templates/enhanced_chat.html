@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhatsApp Bot - Enhanced Chat</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <style>
         * {
             margin: 0;
@@ -98,6 +98,42 @@
 
         .add-contact:hover {
             background: #0056b3;
+        }
+
+        .account-selector {
+            padding: 15px;
+            border-bottom: 1px solid #e0e0e0;
+            background: #f8f9fa;
+        }
+
+        .account-selector label {
+            display: block;
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        .account-selector select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: white;
+            font-size: 0.9em;
+            color: #333;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .account-selector select:focus {
+            outline: none;
+            border-color: #25D366;
+            box-shadow: 0 0 0 2px rgba(37, 211, 102, 0.1);
+        }
+
+        .account-selector select:hover {
+            border-color: #25D366;
         }
 
         .chat-area {
@@ -334,6 +370,15 @@
             <div class="sidebar-header">
                 📱 Contacts
             </div>
+
+            <!-- Account Selector -->
+            <div class="account-selector">
+                <label for="accountSelect">WhatsApp Account:</label>
+                <select id="accountSelect" onchange="switchAccount()">
+                    <option value="main">Loading accounts...</option>
+                </select>
+            </div>
+
             <div class="contacts-list" id="contactsList">
                 <!-- Contacts will be loaded here -->
             </div>
@@ -390,6 +435,6 @@
 
     <!-- Socket.IO Client Library -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="{{ url_for('static', filename='chat.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 </body>
 </html>

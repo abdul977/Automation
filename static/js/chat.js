@@ -4,14 +4,22 @@ class WhatsAppChat {
     constructor() {
         console.log('🚀 [ENHANCED CHAT] Initializing Enhanced Chat Interface...');
 
-        this.contacts = JSON.parse(localStorage.getItem('whatsapp_contacts') || '[]');
+        // Multi-account support
+        this.accounts = [];
+        this.activeAccountId = localStorage.getItem('whatsapp_active_account') || 'main';
+
+        this.contacts = JSON.parse(localStorage.getItem(`whatsapp_contacts_${this.activeAccountId}`) || '[]');
         this.activeContact = null;
         this.messageHistory = {};
 
         console.log('📱 [ENHANCED CHAT] Loaded contacts from localStorage:', this.contacts);
+        console.log('🏢 [ENHANCED CHAT] Active account:', this.activeAccountId);
 
         this.initializeElements();
         console.log('🔧 [ENHANCED CHAT] Elements initialized');
+
+        this.loadAccountsFromServer();
+        console.log('🔄 [ENHANCED CHAT] Loading accounts from server...');
 
         this.loadContactsFromServer();
         console.log('🔄 [ENHANCED CHAT] Loading contacts from server...');
@@ -44,6 +52,7 @@ class WhatsAppChat {
         this.chatStatus = document.getElementById('chatStatus');
         this.chatInputContainer = document.getElementById('chatInputContainer');
         this.addContactModal = document.getElementById('addContactModal');
+        this.accountSelect = document.getElementById('accountSelect');
     }
 
     normalizePhoneNumber(phoneNumber) {
@@ -82,8 +91,14 @@ class WhatsAppChat {
     }
 
     handleNewMessage(data) {
-        const { phone_number, message } = data;
-        console.log(`📱 [ENHANCED CHAT] New message for ${phone_number}:`, message);
+        const { account_id, phone_number, message } = data;
+        console.log(`📱 [ENHANCED CHAT] New message for ${phone_number} (Account: ${account_id}):`, message);
+
+        // Only process messages for the currently active account
+        if (account_id !== this.activeAccountId) {
+            console.log(`ℹ️ [ENHANCED CHAT] Message is for different account (${account_id}), ignoring`);
+            return;
+        }
 
         // Update message history
         if (!this.messageHistory[phone_number]) {
@@ -210,16 +225,58 @@ class WhatsAppChat {
         });
     }
 
+    async loadAccountsFromServer() {
+        try {
+            console.log('🔄 [ENHANCED CHAT] Loading accounts from server...');
+            const response = await fetch('/api/accounts');
+            const data = await response.json();
+
+            console.log('📋 [ENHANCED CHAT] Server response for accounts:', data);
+
+            if (data.status === 'success') {
+                this.accounts = data.accounts;
+                console.log('🏢 [ENHANCED CHAT] Loaded accounts:', this.accounts);
+                this.populateAccountSelector();
+            } else {
+                console.error('❌ [ENHANCED CHAT] Server returned error:', data);
+                this.showNotification('Failed to load accounts', 'error');
+            }
+        } catch (error) {
+            console.error('💥 [ENHANCED CHAT] Error loading accounts from server:', error);
+            this.showNotification('Failed to load accounts', 'error');
+        }
+    }
+
+    populateAccountSelector() {
+        if (!this.accountSelect || !this.accounts.length) return;
+
+        // Clear existing options
+        this.accountSelect.innerHTML = '';
+
+        // Add account options
+        this.accounts.forEach(account => {
+            const option = document.createElement('option');
+            option.value = account.id;
+            option.textContent = account.name;
+            if (account.id === this.activeAccountId) {
+                option.selected = true;
+            }
+            this.accountSelect.appendChild(option);
+        });
+
+        console.log('🔧 [ENHANCED CHAT] Account selector populated with', this.accounts.length, 'accounts');
+    }
+
     async loadContactsFromServer() {
         try {
-            console.log('🔄 [ENHANCED CHAT] Loading contacts from server...');
-            const response = await fetch('/api/contacts');
+            console.log(`🔄 [ENHANCED CHAT] Loading contacts from server for account: ${this.activeAccountId}...`);
+            const response = await fetch(`/api/contacts?account_id=${this.activeAccountId}`);
             const data = await response.json();
 
             console.log('📋 [ENHANCED CHAT] Server response for contacts:', data);
 
             if (data.status === 'success') {
-                console.log(`✅ [ENHANCED CHAT] Found ${data.contacts.length} contacts on server`);
+                console.log(`✅ [ENHANCED CHAT] Found ${data.contacts.length} contacts on server for account ${this.activeAccountId}`);
 
                 // Merge server contacts with local contacts
                 const serverContacts = data.contacts.map(contact => ({
@@ -232,8 +289,8 @@ class WhatsAppChat {
 
                 console.log('🔄 [ENHANCED CHAT] Mapped server contacts:', serverContacts);
 
-                // Add any local contacts that aren't on server
-                const localContacts = JSON.parse(localStorage.getItem('whatsapp_contacts') || '[]');
+                // Add any local contacts that aren't on server (account-specific)
+                const localContacts = JSON.parse(localStorage.getItem(`whatsapp_contacts_${this.activeAccountId}`) || '[]');
                 console.log('📱 [ENHANCED CHAT] Local contacts from localStorage:', localContacts);
 
                 localContacts.forEach(localContact => {
@@ -259,16 +316,16 @@ class WhatsAppChat {
 
     async loadMessagesForContact(phoneNumber) {
         try {
-            console.log(`💬 [ENHANCED CHAT] Loading messages for contact: ${phoneNumber}`);
+            console.log(`💬 [ENHANCED CHAT] Loading messages for contact: ${phoneNumber} (Account: ${this.activeAccountId})`);
 
             // Remove + prefix for API call
             const normalizedPhone = phoneNumber.replace('+', '');
             console.log(`🔄 [ENHANCED CHAT] Normalized phone for API: ${normalizedPhone}`);
 
-            const response = await fetch(`/api/messages/${normalizedPhone}`);
+            const response = await fetch(`/api/messages/${normalizedPhone}?account_id=${this.activeAccountId}`);
             const data = await response.json();
 
-            console.log(`📨 [ENHANCED CHAT] Server response for messages (${normalizedPhone}):`, data);
+            console.log(`📨 [ENHANCED CHAT] Server response for messages (${normalizedPhone}, Account: ${this.activeAccountId}):`, data);
 
             if (data.status === 'success') {
                 console.log(`✅ [ENHANCED CHAT] Found ${data.messages.length} messages for ${phoneNumber}`);
@@ -427,7 +484,7 @@ class WhatsAppChat {
             return;
         }
 
-        console.log(`📤 [ENHANCED CHAT] Sending message to ${this.activeContact.phone}: "${message}"`);
+        console.log(`📤 [ENHANCED CHAT] Sending message to ${this.activeContact.phone}: "${message}" (Account: ${this.activeAccountId})`);
 
         // Add sent message to chat
         this.addMessage(message, 'sent');
@@ -439,7 +496,8 @@ class WhatsAppChat {
 
         const payload = {
             to: this.activeContact.phone,
-            message: message
+            message: message,
+            account_id: this.activeAccountId
         };
         console.log('📋 [ENHANCED CHAT] Send payload:', payload);
 
@@ -532,6 +590,39 @@ class WhatsAppChat {
         sidebar.classList.toggle('mobile-show');
     }
 
+    async switchAccount() {
+        const newAccountId = this.accountSelect.value;
+        if (newAccountId === this.activeAccountId) return;
+
+        console.log(`🔄 [ENHANCED CHAT] Switching from account ${this.activeAccountId} to ${newAccountId}`);
+
+        // Save current account's contacts to localStorage
+        localStorage.setItem(`whatsapp_contacts_${this.activeAccountId}`, JSON.stringify(this.contacts));
+
+        // Switch to new account
+        this.activeAccountId = newAccountId;
+        localStorage.setItem('whatsapp_active_account', newAccountId);
+
+        // Load contacts for new account
+        this.contacts = JSON.parse(localStorage.getItem(`whatsapp_contacts_${this.activeAccountId}`) || '[]');
+
+        // Clear current chat
+        this.activeContact = null;
+        this.chatTitle.textContent = 'Select a contact to start chatting';
+        this.chatMessages.innerHTML = '<div class="empty-state"><h3>Welcome to WhatsApp Bot Chat! 🤖</h3><p>Add a contact and start sending messages through WhatsApp Business API</p></div>';
+        this.chatInputContainer.style.display = 'none';
+
+        // Reload contacts from server for new account
+        await this.loadContactsFromServer();
+
+        // Update chat status to show current account
+        const activeAccount = this.accounts.find(acc => acc.id === this.activeAccountId);
+        this.chatStatus.textContent = `WhatsApp Bot Ready - ${activeAccount ? activeAccount.name : this.activeAccountId}`;
+
+        console.log(`✅ [ENHANCED CHAT] Successfully switched to account ${newAccountId}`);
+        this.showNotification(`Switched to ${activeAccount ? activeAccount.name : newAccountId}`, 'success');
+    }
+
     async checkBotStatus() {
         try {
             const response = await fetch('/api/status');
@@ -583,6 +674,10 @@ function clearChat() {
 
 function toggleSidebar() {
     window.chatApp.toggleSidebar();
+}
+
+function switchAccount() {
+    window.chatApp.switchAccount();
 }
 
 // Initialize the chat application when DOM is loaded

@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request
-from whatsapp_api_test import send_whatsapp_message
+from tests.whatsapp_api_test import send_whatsapp_message
 import json
 
 app = Flask(__name__)

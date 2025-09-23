@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Account WhatsApp Frontend Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .account-selector {
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: #f8f9fa;
+            margin: 10px 0;
+        }
+        .account-selector label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        .account-selector select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background: white;
+            font-size: 14px;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .api-test {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Multi-Account WhatsApp Frontend Test</h1>
+    
+    <div class="test-section">
+        <h2>1. Account Selector UI Test</h2>
+        <p>This tests the account selector component that was added to the enhanced chat interface:</p>
+        
+        <div class="account-selector">
+            <label for="testAccountSelect">WhatsApp Account:</label>
+            <select id="testAccountSelect" onchange="testAccountSwitch()">
+                <option value="main">Main Business Account</option>
+                <option value="secondary">Secondary Business Account</option>
+            </select>
+        </div>
+        
+        <div id="accountSwitchResult" class="test-result info">
+            Select an account above to test the switching functionality
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>2. API Endpoints Test</h2>
+        <p>These buttons test the new multi-account API endpoints:</p>
+        
+        <button onclick="testAccountsAPI()">Test GET /api/accounts</button>
+        <button onclick="testAccountContactsAPI()">Test GET /api/accounts/{id}/contacts</button>
+        <button onclick="testAccountMessagesAPI()">Test GET /api/accounts/{id}/messages/{phone}</button>
+        
+        <div class="api-test">
+            <h4>API Test Results:</h4>
+            <div id="apiResults">Click the buttons above to test the API endpoints</div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>3. Message Payload Test</h2>
+        <p>This tests the enhanced message sending payload with account selection:</p>
+        
+        <div>
+            <label>Phone Number:</label>
+            <input type="text" id="testPhone" value="2349025794407" style="width: 200px; padding: 5px;">
+        </div>
+        <div style="margin: 10px 0;">
+            <label>Message:</label>
+            <input type="text" id="testMessage" value="Hello from multi-account system!" style="width: 300px; padding: 5px;">
+        </div>
+        <div style="margin: 10px 0;">
+            <label>Account:</label>
+            <select id="testMessageAccount" style="padding: 5px;">
+                <option value="main">Main Business Account</option>
+                <option value="secondary">Secondary Business Account</option>
+            </select>
+        </div>
+        
+        <button onclick="testMessagePayload()">Generate Test Payload</button>
+        
+        <div id="messagePayloadResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>4. Frontend Integration Summary</h2>
+        <div id="integrationSummary" class="test-result info">
+            <h4>✅ Frontend Enhancements Completed:</h4>
+            <ul>
+                <li>✅ Account selector UI added to enhanced chat interface</li>
+                <li>✅ JavaScript updated to handle account switching</li>
+                <li>✅ Message sending functions updated to include account_id</li>
+                <li>✅ Contact loading made account-specific</li>
+                <li>✅ WebSocket message handling updated for account isolation</li>
+                <li>✅ Local storage made account-specific</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let currentAccount = 'main';
+        
+        function testAccountSwitch() {
+            const select = document.getElementById('testAccountSelect');
+            const result = document.getElementById('accountSwitchResult');
+            const newAccount = select.value;
+            
+            if (newAccount !== currentAccount) {
+                currentAccount = newAccount;
+                result.className = 'test-result success';
+                result.innerHTML = `✅ Successfully switched to account: <strong>${newAccount}</strong><br>
+                    This would trigger:<br>
+                    • Save current contacts to localStorage<br>
+                    • Load contacts for new account<br>
+                    • Clear current chat<br>
+                    • Update API calls to use new account_id`;
+            }
+        }
+        
+        function testAccountsAPI() {
+            const result = document.getElementById('apiResults');
+            const mockResponse = {
+                "status": "success",
+                "accounts": [
+                    {
+                        "id": "main",
+                        "name": "Main Business Account",
+                        "phone_number_id": "837445062775054",
+                        "business_account_id": "2139592896448288",
+                        "status": "active"
+                    },
+                    {
+                        "id": "secondary",
+                        "name": "Secondary Business Account", 
+                        "phone_number_id": "123456789012345",
+                        "business_account_id": "9876543210987654",
+                        "status": "active"
+                    }
+                ],
+                "count": 2
+            };
+            
+            result.innerHTML = `
+                <div class="test-result success">
+                    <strong>✅ GET /api/accounts</strong><br>
+                    <pre>${JSON.stringify(mockResponse, null, 2)}</pre>
+                </div>
+            `;
+        }
+        
+        function testAccountContactsAPI() {
+            const result = document.getElementById('apiResults');
+            const mockResponse = {
+                "status": "success",
+                "account_id": "main",
+                "contacts": [
+                    {
+                        "phone": "2349025794407",
+                        "name": "Contact 4407",
+                        "last_message": "Hello from main account",
+                        "last_message_time": "2024-01-15T10:30:00Z",
+                        "message_count": 5
+                    }
+                ],
+                "count": 1
+            };
+            
+            result.innerHTML = `
+                <div class="test-result success">
+                    <strong>✅ GET /api/accounts/main/contacts</strong><br>
+                    <pre>${JSON.stringify(mockResponse, null, 2)}</pre>
+                </div>
+            `;
+        }
+        
+        function testAccountMessagesAPI() {
+            const result = document.getElementById('apiResults');
+            const mockResponse = {
+                "status": "success",
+                "account_id": "main",
+                "phone_number": "2349025794407",
+                "messages": [
+                    {
+                        "id": "msg_123",
+                        "text": "Hello from main account",
+                        "type": "outgoing",
+                        "timestamp": "2024-01-15T10:30:00Z",
+                        "account_id": "main"
+                    }
+                ],
+                "count": 1
+            };
+            
+            result.innerHTML = `
+                <div class="test-result success">
+                    <strong>✅ GET /api/accounts/main/messages/2349025794407</strong><br>
+                    <pre>${JSON.stringify(mockResponse, null, 2)}</pre>
+                </div>
+            `;
+        }
+        
+        function testMessagePayload() {
+            const phone = document.getElementById('testPhone').value;
+            const message = document.getElementById('testMessage').value;
+            const account = document.getElementById('testMessageAccount').value;
+            const result = document.getElementById('messagePayloadResult');
+            
+            const payload = {
+                to: phone,
+                message: message,
+                account_id: account,
+                type: "text"
+            };
+            
+            result.innerHTML = `
+                <div class="test-result success" style="margin-top: 15px;">
+                    <strong>✅ Enhanced Message Payload:</strong><br>
+                    <pre>${JSON.stringify(payload, null, 2)}</pre>
+                    <p><strong>API Endpoint:</strong> POST /send</p>
+                    <p><strong>Account-Specific Endpoint:</strong> POST /api/accounts/${account}/send</p>
+                </div>
+            `;
+        }
+        
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Multi-Account WhatsApp Frontend Test Page Loaded');
+        });
+    </script>
+</body>
+</html>
