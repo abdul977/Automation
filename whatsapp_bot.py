@@ -414,29 +414,7 @@ def send_whatsapp_message(to_phone_number, message_text, message_type="text", ac
             "phone_number": formatted_phone
         }
 
-def process_whatsapp_message(message_data):
-    """
-    Process incoming WhatsApp message and generate response
-    
-    Args:
-        message_data (dict): Message data from webhook
-    
-    Returns:
-        str: Response message
-    """
-    # Extract message text
-    message_text = message_data.get("text", {}).get("body", "").lower()
-    sender_name = message_data.get("profile", {}).get("name", "User")
-    
-    # Simple response logic - customize this as needed
-    if "hello" in message_text or "hi" in message_text:
-        return f"Hello {sender_name}! How can I help you today?"
-    elif "help" in message_text:
-        return "I'm a WhatsApp bot. You can ask me questions or just say hello!"
-    elif "bye" in message_text or "goodbye" in message_text:
-        return f"Goodbye {sender_name}! Have a great day!"
-    else:
-        return f"Thanks for your message: '{message_text}'. I'm still learning how to respond better!"
+# Auto-reply function removed - no longer generating automatic responses
 
 @app.route("/webhook", methods=["GET"])
 def verify_webhook():
@@ -528,27 +506,8 @@ def handle_webhook():
                                     account_id=account_id
                                 )
 
-                                # Generate response
-                                response_text = process_whatsapp_message(message)
-                                print(f"🤖 Generated response: '{response_text}'")
-
-                                # Send response back using the same account
-                                if sender_phone and response_text:
-                                    print(f"📤 Sending response to {sender_phone} via account {account_id}")
-                                    result = send_whatsapp_message(sender_phone, response_text, "text", account_id)
-                                    if not result["success"]:
-                                        print(f"❌ Failed to send response: {result['error']}")
-                                    else:
-                                        print(f"✅ Response sent successfully!")
-                                        # Store outgoing response with account ID
-                                        store_message(
-                                            phone_number=sender_phone,
-                                            message_text=response_text,
-                                            sender_type='outgoing',
-                                            message_id=result.get('message_id'),
-                                            timestamp=datetime.now().isoformat(),
-                                            account_id=account_id
-                                        )
+                                print(f"✅ Message received and stored successfully from {sender_phone}")
+                                # Auto-reply functionality removed - messages are received and stored only
                             else:
                                 print(f"⚠️ Unsupported message type: {message_type}")
         else:
@@ -868,20 +827,7 @@ def test_incoming_message():
                                 timestamp=datetime.now().isoformat()
                             )
                             print(f"🧪 [TEST] Stored incoming message from {sender_phone}")
-
-                            # Generate response
-                            response_text = process_whatsapp_message(message)
-                            print(f"🧪 [TEST] Generated response: '{response_text}'")
-
-                            # Store outgoing response (simulated - not actually sent)
-                            store_message(
-                                phone_number=sender_phone,
-                                message_text=response_text,
-                                sender_type='outgoing',
-                                message_id=f"test_response_{message_id}",
-                                timestamp=datetime.now().isoformat()
-                            )
-                            print(f"🧪 [TEST] Stored outgoing response to {sender_phone}")
+                            print(f"🧪 [TEST] Auto-reply functionality removed - message received and stored only")
 
         return jsonify({"status": "success", "message": "Test message processed and stored"}), 200
 
