@@ -22,6 +22,7 @@ import redis
 import threading
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from flask_socketio import SocketIO, emit
+from flask_cors import CORS
 from dotenv import load_dotenv
 from datetime import datetime
 from collections import defaultdict
@@ -29,38 +30,18 @@ from collections import defaultdict
 # Load environment variables
 load_dotenv()
 
-# Multi-Account Configuration System
-WHATSAPP_ACCOUNTS = {
-    "main": {
-        "name": "Main Business Account",
-        "token": os.getenv("WHATSAPP_TOKEN", "EAAQEKbLnBZAMBPetZCCPqKZALn7S5D1LswpqvOQhDajKepWyaMzZAdzHDwLYsDVK5ZCbR0nhxU2nYM7UvdMvVcWBahJA4iIuZBVPIP2vqGN8apucWAj9Dnp21vuKDS4PP78qFB87Xf330gmjECckjo7Owq4ank8ZA5ZB659by2Vz7ZAOZAub7B05yi6OrfGwvikQZDZD"),
-        "phone_number_id": os.getenv("PHONE_NUMBER_ID", "837445062775054"),
-        "business_account_id": os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID", "2139592896448288"),
-        "status": "active"
-    },
-    "secondary": {
-        "name": "Secondary Business Account",
-        "token": os.getenv("WHATSAPP_TOKEN_2", "EAAQEKbLnBZAMBPetZCCPqKZALn7S5D1LswpqvOQhDajKepWyaMzZAdzHDwLYsDVK5ZCbR0nhxU2nYM7UvdMvVcWBahJA4iIuZBVPIP2vqGN8apucWAj9Dnp21vuKDS4PP78qFB87Xf330gmjECckjo7Owq4ank8ZA5ZB659by2Vz7ZAOZAub7B05yi6OrfGwvikQZDZD"),
-        "phone_number_id": os.getenv("PHONE_NUMBER_ID_2", "123456789012345"),
-        "business_account_id": os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID_2", "9876543210987654"),
-        "status": "active"
-    }
-}
+# Redis key for storing accounts
+REDIS_ACCOUNTS_KEY = "whatsapp_accounts"
+
+# In-memory store for accounts, loaded on startup
+WHATSAPP_ACCOUNTS = {}
 
 # Legacy Configuration (for backward compatibility)
-WHATSAPP_TOKEN = WHATSAPP_ACCOUNTS["main"]["token"]
-VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "whatsapp_verify_token_2024")  # Set this in your webhook config
-PHONE_NUMBER_ID = WHATSAPP_ACCOUNTS["main"]["phone_number_id"]
-WHATSAPP_BUSINESS_ACCOUNT_ID = WHATSAPP_ACCOUNTS["main"]["business_account_id"]
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "whatsapp_verify_token_2024")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://automation-9lq8.onrender.com/webhook")
 APP_ID = os.getenv("APP_ID", "1130477048497555")
-APP_SECRET = os.getenv("APP_SECRET", "your_app_secret")  # For webhook verification
-
-# WhatsApp API Configuration
+APP_SECRET = os.getenv("APP_SECRET", "your_app_secret")
 GRAPH_API_VERSION = "v18.0"
-WHATSAPP_API_URL = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{PHONE_NUMBER_ID}/messages"
-
-# Default account for legacy compatibility
 DEFAULT_ACCOUNT_ID = "main"
 
 # Redis Configuration
@@ -72,6 +53,7 @@ REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "kJovVpgJkDeeZVvL5A6vhCznvWQ06kHU")
 # Initialize Flask app and SocketIO
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'whatsapp_bot_secret_key'
+CORS(app)  # Enable CORS for all routes
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Initialize Redis connection
@@ -83,7 +65,6 @@ try:
         username=REDIS_USERNAME,
         password=REDIS_PASSWORD,
     )
-    # Test connection
     redis_client.ping()
     print("✅ Redis connection successful!")
 except Exception as e:
@@ -91,28 +72,66 @@ except Exception as e:
     redis_client = None
 
 # Message storage system (fallback to in-memory if Redis fails)
-# Structure: {account_id: {phone_number: [messages]}}
 message_store = defaultdict(lambda: defaultdict(list))
 
-# Multi-Account Helper Functions
+# --- Multi-Account Management ---
+
+def load_accounts_from_env():
+    """Loads the default accounts from environment variables."""
+    return {
+        "main": {
+            "name": "Main Business Account",
+            "token": os.getenv("WHATSAPP_TOKEN", "EAAQEKbLnBZAMBPetZCCPqKZALn7S5D1LswpqvOQhDajKepWyaMzZAdzHDwLYsDVK5ZCbR0nhxU2nYM7UvdMvVcWBahJA4iIuZBVPIP2vqGN8apucWAj9Dnp21vuKDS4PP78qFB87Xf330gmjECckjo7Owq4ank8ZA5ZB659by2Vz7ZAOZAub7B05yi6OrfGwvikQZDZD"),
+            "phone_number_id": os.getenv("PHONE_NUMBER_ID", "837445062775054"),
+            "business_account_id": os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID", "2139592896448288"),
+            "status": "active"
+        },
+        "secondary": {
+            "name": "Secondary Business Account",
+            "token": os.getenv("WHATSAPP_TOKEN_2", "EAAQEKbLnBZAMBPetZCCPqKZALn7S5D1LswpqvOQhDajKepWyaMzZAdzHDwLYsDVK5ZCbR0nhxU2nYM7UvdMvVcWBahJA4iIuZBVPIP2vqGN8apucWAj9Dnp21vuKDS4PP78qFB87Xf330gmjECckjo7Owq4ank8ZA5ZB659by2Vz7ZAOZAub7B05yi6OrfGwvikQZDZD"),
+            "phone_number_id": os.getenv("PHONE_NUMBER_ID_2", "123456789012345"),
+            "business_account_id": os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID_2", "9876543210987654"),
+            "status": "active"
+        }
+    }
+
+def load_accounts():
+    """Load accounts from environment variables and then from Redis."""
+    global WHATSAPP_ACCOUNTS
+    accounts = load_accounts_from_env()
+    if redis_client:
+        try:
+            stored_accounts = redis_client.get(REDIS_ACCOUNTS_KEY)
+            if stored_accounts:
+                accounts.update(json.loads(stored_accounts))
+                print("✅ Loaded additional accounts from Redis.")
+        except Exception as e:
+            print(f"⚠️ Could not load accounts from Redis: {e}")
+    WHATSAPP_ACCOUNTS = accounts
+
+def save_accounts():
+    """Save the current accounts dictionary to Redis."""
+    if redis_client:
+        try:
+            redis_client.set(REDIS_ACCOUNTS_KEY, json.dumps(WHATSAPP_ACCOUNTS))
+            print("✅ Saved accounts to Redis.")
+        except Exception as e:
+            print(f"⚠️ Could not save accounts to Redis: {e}")
+
 def get_account_config(account_id):
-    """Get configuration for a specific account"""
     return WHATSAPP_ACCOUNTS.get(account_id)
 
 def get_account_api_url(account_id):
-    """Get WhatsApp API URL for a specific account"""
     account = get_account_config(account_id)
     if not account:
         return None
     return f"https://graph.facebook.com/{GRAPH_API_VERSION}/{account['phone_number_id']}/messages"
 
 def validate_account_id(account_id):
-    """Validate if account ID exists and is active"""
     account = get_account_config(account_id)
     return account is not None and account.get('status') == 'active'
 
 def get_all_accounts():
-    """Get all available accounts"""
     return [
         {
             "id": account_id,
@@ -122,15 +141,99 @@ def get_all_accounts():
             "status": config["status"]
         }
         for account_id, config in WHATSAPP_ACCOUNTS.items()
-        if config.get('status') == 'active'
     ]
 
 def get_account_by_phone_number_id(phone_number_id):
-    """Get account ID by phone number ID (for webhook processing)"""
     for account_id, config in WHATSAPP_ACCOUNTS.items():
-        if config.get('phone_number_id') == phone_number_id and config.get('status') == 'active':
+        if config.get('phone_number_id') == phone_number_id:
             return account_id
-    return DEFAULT_ACCOUNT_ID  # Fallback to default account
+    return None
+
+def get_account_by_ids(business_account_id, phone_number_id):
+    """Get account ID by business_account_id and phone_number_id."""
+    for account_id, config in WHATSAPP_ACCOUNTS.items():
+        if config.get('business_account_id') == business_account_id and config.get('phone_number_id') == phone_number_id:
+            return account_id
+    return None
+
+# ... (rest of the helper functions like normalize_phone_number, store_message, etc.)
+
+
+# --- API Endpoints ---
+
+@app.route("/api/accounts", methods=["GET"])
+def get_accounts_api():
+    """Get all available WhatsApp accounts."""
+    return jsonify({"status": "success", "accounts": get_all_accounts()})
+
+@app.route("/api/accounts/add", methods=["POST"])
+def add_account_api():
+    """Add a new WhatsApp account."""
+    data = request.get_json()
+    if not data or not all(k in data for k in ['id', 'name', 'token', 'phone_number_id', 'business_account_id']):
+        return jsonify({"status": "error", "message": "Missing required account data"}), 400
+
+    account_id = data['id']
+    if account_id in WHATSAPP_ACCOUNTS:
+        return jsonify({"status": "error", "message": f"Account with ID '{account_id}' already exists"}), 409
+
+    new_account = {
+        "name": data['name'],
+        "token": data['token'],
+        "phone_number_id": data['phone_number_id'],
+        "business_account_id": data['business_account_id'],
+        "status": data.get('status', 'active')
+    }
+    WHATSAPP_ACCOUNTS[account_id] = new_account
+    save_accounts()
+    return jsonify({"status": "success", "message": "Account added successfully", "account": new_account}), 201
+
+@app.route("/api/accounts/<account_id>/update", methods=["PUT"])
+def update_account_api(account_id):
+    """Update an existing WhatsApp account."""
+    if account_id not in WHATSAPP_ACCOUNTS:
+        return jsonify({"status": "error", "message": "Account not found"}), 404
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"status": "error", "message": "No update data provided"}), 400
+
+    # Update only the provided fields
+    for key in ['name', 'token', 'phone_number_id', 'business_account_id', 'status']:
+        if key in data:
+            WHATSAPP_ACCOUNTS[account_id][key] = data[key]
+    
+    save_accounts()
+    return jsonify({"status": "success", "message": "Account updated successfully", "account": WHATSAPP_ACCOUNTS[account_id]})
+
+@app.route("/api/accounts/<account_id>/delete", methods=["DELETE"])
+def delete_account_api(account_id):
+    """Delete a WhatsApp account."""
+    if account_id not in WHATSAPP_ACCOUNTS:
+        return jsonify({"status": "error", "message": "Account not found"}), 404
+
+    # Prevent deletion of the default 'main' account for safety
+    if account_id == DEFAULT_ACCOUNT_ID:
+        return jsonify({"status": "error", "message": "Cannot delete the default main account"}), 403
+
+    deleted_account = WHATSAPP_ACCOUNTS.pop(account_id)
+    save_accounts()
+    return jsonify({"status": "success", "message": f"Account '{deleted_account['name']}' deleted successfully"})
+
+
+# ... (rest of the file from send_whatsapp_message onwards, with modifications to use account_id)
+
+# In initialize_bot():
+# ...
+# load_accounts()
+# ...
+
+if __name__ == "__main__":
+    load_accounts()
+    port = int(os.getenv("PORT", 8000))
+    print(f"🚀 Starting server with WebSocket support on port {port}")
+    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
+
 
 def normalize_phone_number(phone_number):
     """
@@ -525,24 +628,29 @@ def handle_webhook():
 def send_message_endpoint():
     """
     Manual endpoint to send messages (supports multi-account)
-    Usage: POST /send with JSON body: {"to": "phone_number", "message": "text", "type": "text|template", "account_id": "main"}
+    Usage: POST /send with JSON body: {"to": "phone_number", "message": "text", "type": "text|template", "business_id": "your_business_id", "phone_id": "your_phone_id"}
     """
     try:
         data = request.get_json()
         to_phone = data.get("to")
         message = data.get("message", "")
         message_type = data.get("type", "text")
-        account_id = data.get("account_id", DEFAULT_ACCOUNT_ID)  # Support account selection
+        business_id = data.get("business_id")
+        phone_id = data.get("phone_id")
 
         if not to_phone:
             return jsonify({"error": "Missing 'to' parameter"}), 400
 
+        if not business_id or not phone_id:
+            return jsonify({"error": "Missing 'business_id' or 'phone_id' parameter"}), 400
+
         if message_type == "text" and not message:
             return jsonify({"error": "Missing 'message' parameter for text messages"}), 400
 
-        # Validate account ID if provided
-        if account_id != DEFAULT_ACCOUNT_ID and not validate_account_id(account_id):
-            return jsonify({"error": f"Invalid or inactive account ID: {account_id}"}), 400
+        account_id = get_account_by_ids(business_id, phone_id)
+
+        if not account_id:
+            return jsonify({"error": f"No account found for business_id {business_id} and phone_id {phone_id}"}), 404
 
         result = send_whatsapp_message(to_phone, message, message_type, account_id)
 
@@ -908,6 +1016,48 @@ def get_accounts_api():
             "accounts": accounts,
             "count": len(accounts)
         }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/accounts/add", methods=["POST"])
+def add_account_api():
+    """
+    Add a new WhatsApp account
+    """
+    try:
+        data = request.get_json()
+        account_id = data.get("id")
+        account_name = data.get("name")
+        account_token = data.get("token")
+        account_phone_number_id = data.get("phone_number_id")
+        account_business_account_id = data.get("business_account_id")
+
+        if not all([account_id, account_name, account_token, account_phone_number_id, account_business_account_id]):
+            return jsonify({"status": "error", "message": "Missing required account data"}), 400
+
+        if account_id in WHATSAPP_ACCOUNTS:
+            return jsonify({"status": "error", "message": f"Account with ID '{account_id}' already exists"}), 400
+
+        WHATSAPP_ACCOUNTS[account_id] = {
+            "name": account_name,
+            "token": account_token,
+            "phone_number_id": account_phone_number_id,
+            "business_account_id": account_business_account_id,
+            "status": "active"
+        }
+
+        return jsonify({
+            "status": "success",
+            "message": f"Account '{account_name}' added successfully",
+            "account": {
+                "id": account_id,
+                "name": account_name,
+                "phone_number_id": account_phone_number_id,
+                "business_account_id": account_business_account_id,
+                "status": "active"
+            }
+        }), 201
+
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

@@ -107,13 +107,17 @@ After deployment, configure your webhook URL in Meta Developer Console:
 4. **Enhanced Chat**: `/enhanced-chat` - Advanced interface with contacts
 
 ### API Endpoints
-- `POST /send` - Send messages
+- `POST /send` - Send messages. Expects a JSON body with `to`, `message`, `business_id`, and `phone_id`.
 - `POST /send-template` - Send template messages
 - `POST /webhook` - Receive messages
 - `GET /webhook` - Webhook verification
 - `GET /api/status` - Bot status
 - `GET /api/contacts` - Get contacts
 - `GET /api/messages/<phone>` - Get message history
+- `GET /api/accounts` - Get all available WhatsApp accounts.
+- `POST /api/accounts/add` - Add a new WhatsApp account.
+- `PUT /api/accounts/<account_id>/update` - Update an existing WhatsApp account.
+- `DELETE /api/accounts/<account_id>/delete` - Delete a WhatsApp account.
 
 ## Support
 
