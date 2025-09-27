@@ -81,7 +81,7 @@ def load_accounts_from_env():
     return {
         "main": {
             "name": "Main Business Account",
-            "token": os.getenv("WHATSAPP_TOKEN", "EAAQEKbLnBZAMBPetZCCPqKZALn7S5D1LswpqvOQhDajKepWyaMzZAdzHDwLYsDVK5ZCbR0nhxU2nYM7UvdMvVcWBahJA4iIuZBVPIP2vqGN8apucWAj9Dnp21vuKDS4PP78qFB87Xf330gmjECckjo7Owq4ank8ZA5ZB659by2Vz7ZAOZAub7B05yi6OrfGwvikQZDZD"),
+            "token": os.getenv("WHATSAPP_TOKEN", "EAAQEKbLnBZAMBPjVfhomx48yVWoCTBS4EZAwCcAZCGLf2saHH91ZC5lR8todDiYsybMVRbtQovQJhewLoa30ZBaDhIANTShXGRJIEexqe4OxUMqQgqhHU4ZC5RmQuFQDTzxz89vlfzj2gdflUfxNmC6ciCaFZAsqTu0q1gXQ10IJH0REJkH6KfA4IgZA12hPhwgcvGsNdMIhD9ZCqhazcNLar1pSw0IlSVH5BawNtxwWbm3C91a9fTdZA9bVhQuwZDZD"),
             "phone_number_id": os.getenv("PHONE_NUMBER_ID", "837445062775054"),
             "business_account_id": os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID", "2139592896448288"),
             "status": "active"

@@ -494,10 +494,18 @@ class WhatsAppChat {
         this.sendButton.disabled = true;
         this.sendButton.textContent = 'Sending...';
 
+        const activeAccount = this.accounts.find(acc => acc.id === this.activeAccountId);
+        if (!activeAccount) {
+            console.error('❌ [ENHANCED CHAT] Active account not found!');
+            this.showNotification('Active account not found!', 'error');
+            return;
+        }
+
         const payload = {
             to: this.activeContact.phone,
             message: message,
-            account_id: this.activeAccountId
+            business_id: activeAccount.business_account_id,
+            phone_id: activeAccount.phone_number_id
         };
         console.log('📋 [ENHANCED CHAT] Send payload:', payload);
 
