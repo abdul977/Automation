@@ -89,8 +89,8 @@ def load_accounts_from_env():
         "secondary": {
             "name": "Secondary Business Account",
             "token": os.getenv("WHATSAPP_TOKEN_2", "EAAQEKbLnBZAMBPetZCCPqKZALn7S5D1LswpqvOQhDajKepWyaMzZAdzHDwLYsDVK5ZCbR0nhxU2nYM7UvdMvVcWBahJA4iIuZBVPIP2vqGN8apucWAj9Dnp21vuKDS4PP78qFB87Xf330gmjECckjo7Owq4ank8ZA5ZB659by2Vz7ZAOZAub7B05yi6OrfGwvikQZDZD"),
-            "phone_number_id": os.getenv("PHONE_NUMBER_ID_2", "123456789012345"),
-            "business_account_id": os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID_2", "9876543210987654"),
+            "phone_number_id": os.getenv("PHONE_NUMBER_ID_2", "712795768594387"),
+            "business_account_id": os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID_2", "1840273509923388"),
             "status": "active"
         }
     }
